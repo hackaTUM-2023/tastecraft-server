@@ -10,10 +10,7 @@ pub async fn get_original_recipes(
         Some(search_text) => {
             sqlx::query_as!(
                 Recipe,
-                "
-        SELECT * FROM recipes
-        WHERE title LIKE $1
-        ",
+                r#"SELECT * FROM recipes WHERE title LIKE $1"#,
                 format!("%{search_text}%")
             )
             .fetch_all(db)
@@ -22,9 +19,7 @@ pub async fn get_original_recipes(
         None => {
             sqlx::query_as!(
                 Recipe,
-                "
-        SELECT * FROM recipes
-        "
+                r#"SELECT * FROM recipes"#
             )
             .fetch_all(db)
             .await?
@@ -42,10 +37,7 @@ pub async fn create_motified_recipe(
     // load recipe to id
     let recipe = sqlx::query_as!(
         Recipe,
-        "
-        SELECT * FROM recipes
-        WHERE id = $1
-        ",
+        r#"SELECT * FROM recipes WHERE id = $1"#,
         recipe_id
     )
     .fetch_one(db)
@@ -61,11 +53,10 @@ pub async fn create_motified_recipe(
     // create new recipe entry in database
     let new_recipe = sqlx::query_as!(
         Recipe,
-        "
-        INSERT INTO recipes (title, description, instructions, preptime, difficulty, isoriginal)
+        r#"INSERT INTO recipes (title, description, instructions, preptime, difficulty, isoriginal)
         VALUES ($1, $2, $3, $4, $5, $6)
         RETURNING *
-        ",
+        "#,
         new_recipe.title,
         new_recipe.description,
         new_recipe.instructions,
@@ -79,12 +70,10 @@ pub async fn create_motified_recipe(
     // create preference mapping
     for preference in preferences {
         sqlx::query!(
-            "
-            INSERT INTO recipe_preferences (recipe_fk, preference_fk)
+            r#"INSERT INTO recipe_preferences (recipe_fk, preference_fk)
             VALUES ($1,
                 (SELECT id FROM preferences WHERE name = $2)
-            )
-            ",
+            )"#,
             new_recipe.id,
             preference
         )
@@ -96,10 +85,8 @@ pub async fn create_motified_recipe(
     if recipe.isoriginal {
         // if recipe is original, original_fk = recipe.id
         sqlx::query!(
-            "
-            INSERT INTO variations (original_fk, variation_fk)
-            VALUES ($1, $2)
-            ",
+            r#"INSERT INTO variations (original_fk, variation_fk)
+            VALUES ($1, $2)"#,
             recipe.id,
             new_recipe.id
         )
@@ -108,13 +95,11 @@ pub async fn create_motified_recipe(
     } else {
         // if recipe is not original, original_fk = original_fk in mapping of recipe
         sqlx::query!(
-            "
-            INSERT INTO variations (original_fk, variation_fk)
+            r#"INSERT INTO variations (original_fk, variation_fk)
             VALUES (
                 (SELECT original_fk FROM variations WHERE variation_fk = $1),
                 $2
-            )
-            ",
+            )"#,
             recipe.id,
             new_recipe.id
         )
