@@ -8,6 +8,7 @@ use axum::response::{IntoResponse};
 use axum::{Router, extract::State};
 use axum::routing::get;
 use sqlx::{Postgres, Pool, PgPool};
+use tower_http::services::ServeDir;
 
 use crate::config::Config;
 use crate::services;
@@ -20,10 +21,13 @@ pub struct ApiContext {
 }
 
 pub fn api_router() -> Router<ApiContext> {
+    let serve_dir = ServeDir::new("assets/");
+
     Router::new()
     .route("/version", get(get_version))
     .route("/recipes", get(get_recipes))
     .route("/recipes/:id", get(get_recipe_by_id))
+    .nest_service("/assets", serve_dir)
 }
 
 pub async fn serve(config: Config, db: PgPool) -> anyhow::Result<()> {

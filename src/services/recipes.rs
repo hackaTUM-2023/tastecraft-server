@@ -1,5 +1,6 @@
 use crate::models::recipes::Recipe;
 use sqlx::PgPool;
+use crate::services::openai;
 
 pub async fn get_original_recipes(
     db: &PgPool,
@@ -51,16 +52,12 @@ pub async fn create_motified_recipe(
     .await?;
 
     // TODO generate new recipe based on preferences -> AI call
-    let new_recipe = Recipe {
-        id: 0,
-        title: recipe.title,
-        description: recipe.description,
-        instructions: recipe.instructions,
-        preptime: recipe.preptime,
-        difficulty: recipe.difficulty,
-        isoriginal: false,
-    };
+    let new_recipe = openai::send_request(&recipe, &preferences).await;
+    if new_recipe.is_err() {
+        return Err(sqlx::Error::RowNotFound);
+    }
 
+    let new_recipe = new_recipe.unwrap();
     // create new recipe entry in database
     let new_recipe = sqlx::query_as!(
         Recipe,
