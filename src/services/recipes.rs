@@ -1,23 +1,43 @@
-use std::error::Error;
-use sqlx::PgPool;
 use crate::models::recipes::Recipe;
+use sqlx::PgPool;
 
-pub async fn get_original_recipes(db: &PgPool, search_text: &str) -> Result<Vec<Recipe>, sqlx::Error> {
-    let recipes = sqlx::query_as!(
-        Recipe,
-        "
+pub async fn get_original_recipes(
+    db: &PgPool,
+    search_text: Option<&str>,
+) -> Result<Vec<Recipe>, sqlx::Error> {
+    let recipes = match search_text {
+        Some(search_text) => {
+            sqlx::query_as!(
+                Recipe,
+                "
         SELECT * FROM recipes
         WHERE title LIKE $1
         ",
-        format!("%{search_text}%")
-    )
-        .fetch_all(db)
-        .await?;
+                format!("%{search_text}%")
+            )
+            .fetch_all(db)
+            .await?
+        }
+        None => {
+            sqlx::query_as!(
+                Recipe,
+                "
+        SELECT * FROM recipes
+        "
+            )
+            .fetch_all(db)
+            .await?
+        }
+    };
 
     Ok(recipes)
 }
 
-pub async fn create_motified_recipe(db: &PgPool, recipe_id: i32, preferences: Vec<&str>) -> Result<Recipe, sqlx::Error> {
+pub async fn create_motified_recipe(
+    db: &PgPool,
+    recipe_id: i32,
+    preferences: Vec<&str>,
+) -> Result<Recipe, sqlx::Error> {
     // load recipe to id
     let recipe = sqlx::query_as!(
         Recipe,
@@ -26,7 +46,9 @@ pub async fn create_motified_recipe(db: &PgPool, recipe_id: i32, preferences: Ve
         WHERE id = $1
         ",
         recipe_id
-    ).fetch_one(db).await?;
+    )
+    .fetch_one(db)
+    .await?;
 
     // TODO generate new recipe based on preferences -> AI call
     let new_recipe = Recipe {
@@ -54,8 +76,8 @@ pub async fn create_motified_recipe(db: &PgPool, recipe_id: i32, preferences: Ve
         new_recipe.difficulty,
         false
     )
-        .fetch_one(db)
-        .await?;
+    .fetch_one(db)
+    .await?;
 
     // create preference mapping
     for preference in preferences {
@@ -69,12 +91,12 @@ pub async fn create_motified_recipe(db: &PgPool, recipe_id: i32, preferences: Ve
             new_recipe.id,
             preference
         )
-            .execute(db)
-            .await?;
+        .execute(db)
+        .await?;
     }
 
     // create recipe mapping to original mapping
-    if (recipe.isoriginal) {
+    if recipe.isoriginal {
         // if recipe is original, original_fk = recipe.id
         sqlx::query!(
             "
@@ -84,8 +106,8 @@ pub async fn create_motified_recipe(db: &PgPool, recipe_id: i32, preferences: Ve
             recipe.id,
             new_recipe.id
         )
-            .execute(db)
-            .await?;
+        .execute(db)
+        .await?;
     } else {
         // if recipe is not original, original_fk = original_fk in mapping of recipe
         sqlx::query!(
@@ -99,10 +121,9 @@ pub async fn create_motified_recipe(db: &PgPool, recipe_id: i32, preferences: Ve
             recipe.id,
             new_recipe.id
         )
-            .execute(db)
-            .await?;
+        .execute(db)
+        .await?;
     }
-
 
     Ok(new_recipe)
 }
