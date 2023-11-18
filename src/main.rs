@@ -2,13 +2,14 @@ mod db;
 mod config;
 mod services;
 mod models;
+mod api;
 
 use std::error::Error;
 use clap::Parser;
 use crate::config::Config;
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<(), Box<dyn Error>> {
     // build our application with a single route
     let app = api::init_routing();
 
@@ -35,4 +36,5 @@ async fn main() {
         .await
         .unwrap();
 
+    Ok(())
 }
