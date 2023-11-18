@@ -13,6 +13,9 @@ sqlx = { version = "0.7", features = [ "runtime-tokio", "tls-rustls", "postgres"
 clap = { version = "4.4.8", features = ["derive", "env"] }
 env_logger = "0.10.1"
 serde = { version = "1.0.192", features = ["derive"] }
+reqwest = "0.11.22"
+serde_json = "1.0.108"
+anyhow = "1.0.75"
 
 
 [build-dependencies]

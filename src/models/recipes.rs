@@ -1,8 +1,8 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Recipe {
-    pub id: i32,
+    pub id: Option<i32>,
     pub title: String,
     pub description: Option<String>,
     pub instructions: Option<String>,

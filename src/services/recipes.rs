@@ -1,6 +1,7 @@
 use std::error::Error;
 use sqlx::PgPool;
 use crate::models::recipes::Recipe;
+use crate::services::openai;
 
 pub async fn get_original_recipes(db: &PgPool, search_text: &str) -> Result<Vec<Recipe>, sqlx::Error> {
     let recipes = sqlx::query_as!(
@@ -29,16 +30,12 @@ pub async fn create_motified_recipe(db: &PgPool, recipe_id: i32, preferences: Ve
     ).fetch_one(db).await?;
 
     // TODO generate new recipe based on preferences -> AI call
-    let new_recipe = Recipe {
-        id: 0,
-        title: recipe.title,
-        description: recipe.description,
-        instructions: recipe.instructions,
-        preptime: recipe.preptime,
-        difficulty: recipe.difficulty,
-        isoriginal: false,
-    };
+    let new_recipe = openai::send_request(&recipe, &preferences).await;
+    if new_recipe.is_err() {
+        return Err(sqlx::Error::RowNotFound);
+    }
 
+    let new_recipe = new_recipe.unwrap();
     // create new recipe entry in database
     let new_recipe = sqlx::query_as!(
         Recipe,

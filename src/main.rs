@@ -22,10 +22,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     sqlx::migrate!().run(&db).await?;
 
-    let recipe2 = services::recipes::create_motified_recipe(&db, 2, vec!["chicken"]).await?;
-    println!("{:?}", recipe2);
-    let recipe3 = services::recipes::create_motified_recipe(&db, 3, vec!["beef"]).await?;
-    println!("{:?}", recipe3);
+    let recipe = services::recipes::create_motified_recipe(&db, 9, vec!["vegan"]).await?;
+    println!("{:?}", recipe);
 
     let recipes = services::recipes::get_original_recipes(&db, "title").await?;
     println!("{:?}", recipes);
