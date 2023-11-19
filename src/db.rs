@@ -1,5 +1,5 @@
 use clap::Parser;
-use sqlx::{PgPool, Pool, Postgres};
+use sqlx::{Pool, Postgres};
 use sqlx::postgres::PgPoolOptions;
 use crate::config::Config;
 
