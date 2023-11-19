@@ -19,7 +19,7 @@ CREATE TABLE variations(
 
 CREATE TABLE preferences(
     id serial primary key,
-    name text not null
+    name text not null unique
 );
 
 CREATE TABLE recipe_preferences(
