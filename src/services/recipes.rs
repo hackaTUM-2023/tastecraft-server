@@ -1,8 +1,9 @@
+use std::collections::HashSet;
+
 use crate::models::recipes::Recipe;
 use sqlx::PgPool;
 use crate::services::openai;
-use anyhow::{Context, Result};
-use crate::api::PrefParam;
+use anyhow::Result;
 
 pub async fn get_original_recipes(
     db: &PgPool,
@@ -48,73 +49,50 @@ pub async fn get_recipe_by_id(
 ) -> Result<Recipe> {
     // 1. get original of that recipe
     // 2. for original and all variations, get preferences
-    let recipe_pref = sqlx::query_as!(
-        RecipePreference,
-        "
-        WITH original (id) AS (
-            SELECT COALESCE(
-                (SELECT id FROM recipes WHERE id = $1 AND isoriginal = true),
-                (SELECT original_fk FROM variations WHERE variation_fk = $1)
-            )
-        )
+    let preference_ids: HashSet<i32> = sqlx::query!(
+        r#"SELECT id FROM preferences WHERE name = ANY($1)"#,
+        &preferences
+    )
+    .map(|row| row.id as i32)
+    .fetch_all(db)
+    .await?
+    .into_iter()
+    .collect::<HashSet<_>>();
 
-        SELECT variations.variation_fk AS recipe_id, array_agg(preferences.name) AS preferences
-        FROM original, variations, recipe_preferences, preferences
-        WHERE variations.original_fk = original.id AND variations.variation_fk = recipe_preferences.recipe_fk AND recipe_preferences.preference_fk = preferences.id
-        GROUP BY variations.variation_fk
-        UNION
-        SELECT original.id AS recipe_id, array_agg(preferences.name) AS preferences
-        FROM original, recipe_preferences, preferences
-        WHERE original.id = recipe_preferences.recipe_fk AND recipe_preferences.preference_fk = preferences.id
-        GROUP BY original.id
-        ",
+    // Get all variations for original recipe
+    let variations_for_recipe: Vec<i32> = sqlx::query!(
+        r#"SELECT variation_fk FROM variations WHERE original_fk = $1"#,
         recipe_id
-    ).fetch_all(db).await?;
+    ).map(|row| row.variation_fk as i32)
+    .fetch_all(db).await?;
 
+    for v in variations_for_recipe {
+        // Get all preferences for the recipe
+        let recipe_pref: HashSet<i32> = sqlx::query!(
+            r#"SELECT preference_fk FROM recipe_preferences WHERE recipe_fk = $1"#,
+            v
+        ).map(|row| row.preference_fk as i32)
+        .fetch_all(db).await?
+        .into_iter()
+        .collect::<HashSet<_>>();
 
-    // check if any preferences are superset of query preferences
-    let i = checkRecipe(preferences, recipe_pref).await;
-    return if i != -1 {
-        // if yes, return recipe
-        let recipe = sqlx::query_as!(
-            Recipe,
-            "
-            SELECT * FROM recipes
-            WHERE id = $1
-            ",
-            i
-        )
-            .fetch_one(db)
-            .await?;
-        Ok(recipe)
-    } else {
-        // if not create new recipe
-        Ok(create_modified_recipe(db, recipe_id, preferences).await?)
-    }
-}
-
-async fn checkRecipe(pref_param: &[String], recipe_pref: Vec<RecipePreference>) -> i32 {
-    for rp in recipe_pref{
-        if checkMatch(pref_param, &rp.preferences).await {
-            return rp.recipe_id.unwrap();
+        // If the recipe has the same preferences as the user, return it
+        if recipe_pref == preference_ids {
+            return Ok(sqlx::query_as!(
+                Recipe,
+                "
+                SELECT * FROM recipes
+                WHERE id = $1
+                ",
+                v
+            )
+                .fetch_one(db)
+                .await?);
         }
     }
 
-    return -1;
-}
 
-async fn checkMatch(pref_param: &[String], pref: &[String]) -> bool {
-    if pref.len() != pref_param.len() {
-        return false;
-    }
-
-    for p in pref {
-        if !pref_param.contains(&p) {
-            return false;
-        }
-    }
-
-    return true;
+    Ok(create_modified_recipe(db, recipe_id, preferences).await?)
 }
 
 async fn create_modified_recipe(
