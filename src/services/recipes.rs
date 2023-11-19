@@ -42,7 +42,7 @@ pub async fn get_recipe_by_id(
     recipe_id: i32,
     preferences: &[String],
 ) -> Result<Recipe> {
-    // Check whether recipe is original
+    // fetch original id
     let recipe_id = sqlx::query!(
         r#"SELECT id FROM recipes WHERE id = $1 AND isoriginal=true
         UNION
@@ -53,8 +53,7 @@ pub async fn get_recipe_by_id(
         .fetch_one(db)
         .await?;
  
-    // 1. get original of that recipe
-    // 2. for original and all variations, get preferences
+    // get all preferences there are
     let preference_ids: HashSet<i32> = sqlx::query!(
         r#"SELECT id FROM preferences WHERE name = ANY($1)"#,
         &preferences
@@ -65,13 +64,14 @@ pub async fn get_recipe_by_id(
     .into_iter()
     .collect::<HashSet<_>>();
 
-    // Get all variations for original recipe
-    let variations_for_recipe: Vec<i32> = sqlx::query!(
+    // Get all variations for original recipe and original
+    let mut variations_for_recipe: Vec<i32> = sqlx::query!(
         r#"SELECT variation_fk FROM variations WHERE original_fk = $1"#,
         recipe_id
     ).map(|row| row.variation_fk)
     .fetch_all(db).await?;
 
+    variations_for_recipe.push(recipe_id.unwrap());
     for v in variations_for_recipe {
         // Get all preferences for the recipe
         let recipe_pref: HashSet<i32> = sqlx::query!(

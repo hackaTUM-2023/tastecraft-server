@@ -10,7 +10,7 @@ use axum::routing::get;
 use sqlx::{Postgres, Pool, PgPool};
 use tower_http::services::ServeDir;
 use serde::Deserialize;
-use axum::extract::Query;
+use axum_extra::extract::Query;
 
 use crate::config::Config;
 use crate::services;
