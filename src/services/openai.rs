@@ -1,4 +1,4 @@
-use clap::{Error, Parser};
+use clap::{Parser};
 use reqwest::{Client, Url};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -36,11 +36,11 @@ in JSON format. The json format should be as follows:
     \"isoriginal\": false
 } ";
 
-pub async fn send_request(recipe: &Recipe, preferences: &[&str]) -> Result<Recipe> {
+pub async fn send_request(recipe: &Recipe, preferences: &[String]) -> Result<Recipe> {
     let _config = Config::parse();
 
-    let url = Url::parse("https://api.openai.com/v1/chat/completions").expect("Invalid URL");
-    let recipe_string = serde_json::to_string(&recipe).expect("Failed to serialize recipe");
+    let url = Url::parse("https://api.openai.com/v1/chat/completions")?;
+    let recipe_string = serde_json::to_string(&recipe)?;
     let preferences_string = preferences.join(", ");
     let prompt = format!("Recipe: {recipe_string}, preferences: {preferences_string}");
     let request = json!({
@@ -63,15 +63,15 @@ pub async fn send_request(recipe: &Recipe, preferences: &[&str]) -> Result<Recip
     });
 
     let client = Client::new();
-    let mut req = client.post(url);
+    let req = client.post(url);
     let req = req.header("Content-Type", "application/json")
         .header("Authorization", format!("Bearer {}", _config.openai_key))
         .body(request.to_string());
 
-    let response = req.send().await.expect("Failed to send request");
-    let response_text = response.text().await.expect("Failed to parse response");
+    let response = req.send().await?;
+    let response_text = response.text().await?;
 
-    let v: Value = serde_json::from_str(response_text.as_str()).expect("Failed to parse JSON");
-    let res: Recipe = serde_json::from_str(v["choices"][0]["message"]["content"].as_str().unwrap()).expect("Failed to parse JSON");
+    let v: Value = serde_json::from_str(response_text.as_str())?;
+    let res: Recipe = serde_json::from_str(v["choices"][0]["message"]["content"].as_str().unwrap())?;
     Ok(res)
 }

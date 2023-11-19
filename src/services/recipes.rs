@@ -1,6 +1,9 @@
+use std::collections::HashSet;
+
 use crate::models::recipes::Recipe;
 use sqlx::PgPool;
 use crate::services::openai;
+use anyhow::Result;
 
 pub async fn get_original_recipes(
     db: &PgPool,
@@ -29,27 +32,92 @@ pub async fn get_original_recipes(
     Ok(recipes)
 }
 
-pub async fn create_motified_recipe(
+struct RecipePreference {
+    recipe_id: Option<i32>,
+    preferences: Vec<String>,
+}
+
+pub async fn get_recipe_by_id(
     db: &PgPool,
     recipe_id: i32,
-    preferences: Vec<&str>,
-) -> Result<Recipe, sqlx::Error> {
+    preferences: &[String],
+) -> Result<Recipe> {
+    // fetch original id
+    let recipe_id = sqlx::query!(
+        r#"SELECT id FROM recipes WHERE id = $1 AND isoriginal=true
+        UNION
+        SELECT original_fk as id FROM variations WHERE variation_fk = $1"#,
+        recipe_id
+    )
+        .map(|row| row.id)
+        .fetch_one(db)
+        .await?;
+ 
+    // get all preferences there are
+    let preference_ids: HashSet<i32> = sqlx::query!(
+        r#"SELECT id FROM preferences WHERE name = ANY($1)"#,
+        &preferences
+    )
+    .map(|row| row.id)
+    .fetch_all(db)
+    .await?
+    .into_iter()
+    .collect::<HashSet<_>>();
+
+    // Get all variations for original recipe and original
+    let mut variations_for_recipe: Vec<i32> = sqlx::query!(
+        r#"SELECT variation_fk FROM variations WHERE original_fk = $1"#,
+        recipe_id
+    ).map(|row| row.variation_fk)
+    .fetch_all(db).await?;
+
+    variations_for_recipe.push(recipe_id.unwrap());
+    for v in variations_for_recipe {
+        // Get all preferences for the recipe
+        let recipe_pref: HashSet<i32> = sqlx::query!(
+            r#"SELECT preference_fk FROM recipe_preferences WHERE recipe_fk = $1"#,
+            v
+        ).map(|row| row.preference_fk)
+        .fetch_all(db).await?
+        .into_iter()
+        .collect::<HashSet<_>>();
+
+        // If the recipe has the same preferences as the user, return it
+        if recipe_pref == preference_ids {
+            return Ok(sqlx::query_as!(
+                Recipe,
+                r#"SELECT * FROM recipes WHERE id = $1"#,
+                v
+            )
+                .fetch_one(db)
+                .await?);
+        }
+    }
+
+
+    create_modified_recipe(db, recipe_id.unwrap(), preferences).await
+}
+
+async fn create_modified_recipe(
+    db: &PgPool,
+    recipe_id: i32,
+    preferences: &[String],
+) -> Result<Recipe> {
+
     // load recipe to id
     let recipe = sqlx::query_as!(
         Recipe,
         r#"SELECT * FROM recipes WHERE id = $1"#,
         recipe_id
     )
-    .fetch_one(db)
-    .await?;
+        .fetch_one(db)
+        .await?;
 
-    // TODO generate new recipe based on preferences -> AI call
-    let new_recipe = openai::send_request(&recipe, &preferences).await;
-    if new_recipe.is_err() {
-        return Err(sqlx::Error::RowNotFound);
-    }
+    // generate new recipe based on preferences -> AI call
+    let new_recipe = openai::send_request(&recipe, preferences).await?;
 
-    let new_recipe = new_recipe.unwrap();
+    let mut tx = db.begin().await?;
+
     // create new recipe entry in database
     let new_recipe = sqlx::query_as!(
         Recipe,
@@ -64,22 +132,19 @@ pub async fn create_motified_recipe(
         new_recipe.difficulty,
         false
     )
-    .fetch_one(db)
-    .await?;
+        .fetch_one(&mut *tx)
+        .await?;
 
     // create preference mapping
-    for preference in preferences {
-        sqlx::query!(
+    println!("preferences: {:?}", preferences);
+    sqlx::query!(
             r#"INSERT INTO recipe_preferences (recipe_fk, preference_fk)
-            VALUES ($1,
-                (SELECT id FROM preferences WHERE name = $2)
-            )"#,
+            SELECT $1, id FROM preferences WHERE name = ANY($2)"#,
             new_recipe.id,
-            preference
+            preferences
         )
-        .execute(db)
+        .execute(&mut *tx)
         .await?;
-    }
 
     // create recipe mapping to original mapping
     if recipe.isoriginal {
@@ -90,22 +155,20 @@ pub async fn create_motified_recipe(
             recipe.id,
             new_recipe.id
         )
-        .execute(db)
-        .await?;
+            .execute(&mut *tx)
+            .await?;
     } else {
         // if recipe is not original, original_fk = original_fk in mapping of recipe
         sqlx::query!(
             r#"INSERT INTO variations (original_fk, variation_fk)
-            VALUES (
-                (SELECT original_fk FROM variations WHERE variation_fk = $1),
-                $2
-            )"#,
+            SELECT original_fk, $2 FROM variations WHERE variation_fk = $1"#,
             recipe.id,
             new_recipe.id
         )
-        .execute(db)
-        .await?;
+            .execute(&mut *tx)
+            .await?;
     }
 
+    tx.commit().await?;
     Ok(new_recipe)
 }
