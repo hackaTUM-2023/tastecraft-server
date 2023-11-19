@@ -13,24 +13,19 @@ pub async fn get_original_recipes(
         Some(search_text) => {
             sqlx::query_as!(
                 Recipe,
-                "
-        SELECT * FROM recipes
-        WHERE title LIKE $1
-        ",
+                r#"SELECT * FROM recipes WHERE title LIKE $1"#,
                 format!("%{search_text}%")
             )
-                .fetch_all(db)
-                .await?
+            .fetch_all(db)
+            .await?
         }
         None => {
             sqlx::query_as!(
                 Recipe,
-                "
-        SELECT * FROM recipes
-        "
+                r#"SELECT * FROM recipes"#
             )
-                .fetch_all(db)
-                .await?
+            .fetch_all(db)
+            .await?
         }
     };
 
@@ -64,7 +59,7 @@ pub async fn get_recipe_by_id(
         r#"SELECT id FROM preferences WHERE name = ANY($1)"#,
         &preferences
     )
-    .map(|row| row.id as i32)
+    .map(|row| row.id)
     .fetch_all(db)
     .await?
     .into_iter()
@@ -74,7 +69,7 @@ pub async fn get_recipe_by_id(
     let variations_for_recipe: Vec<i32> = sqlx::query!(
         r#"SELECT variation_fk FROM variations WHERE original_fk = $1"#,
         recipe_id
-    ).map(|row| row.variation_fk as i32)
+    ).map(|row| row.variation_fk)
     .fetch_all(db).await?;
 
     for v in variations_for_recipe {
@@ -82,7 +77,7 @@ pub async fn get_recipe_by_id(
         let recipe_pref: HashSet<i32> = sqlx::query!(
             r#"SELECT preference_fk FROM recipe_preferences WHERE recipe_fk = $1"#,
             v
-        ).map(|row| row.preference_fk as i32)
+        ).map(|row| row.preference_fk)
         .fetch_all(db).await?
         .into_iter()
         .collect::<HashSet<_>>();
@@ -91,10 +86,7 @@ pub async fn get_recipe_by_id(
         if recipe_pref == preference_ids {
             return Ok(sqlx::query_as!(
                 Recipe,
-                "
-                SELECT * FROM recipes
-                WHERE id = $1
-                ",
+                r#"SELECT * FROM recipes WHERE id = $1"#,
                 v
             )
                 .fetch_one(db)
@@ -103,7 +95,7 @@ pub async fn get_recipe_by_id(
     }
 
 
-    Ok(create_modified_recipe(db, recipe_id.unwrap(), preferences).await?)
+    create_modified_recipe(db, recipe_id.unwrap(), preferences).await
 }
 
 async fn create_modified_recipe(
@@ -115,28 +107,24 @@ async fn create_modified_recipe(
     // load recipe to id
     let recipe = sqlx::query_as!(
         Recipe,
-        "
-        SELECT * FROM recipes
-        WHERE id = $1
-        ",
+        r#"SELECT * FROM recipes WHERE id = $1"#,
         recipe_id
     )
         .fetch_one(db)
         .await?;
 
     // generate new recipe based on preferences -> AI call
-    let new_recipe = openai::send_request(&recipe, &preferences).await?;
+    let new_recipe = openai::send_request(&recipe, preferences).await?;
 
     let mut tx = db.begin().await?;
 
     // create new recipe entry in database
     let new_recipe = sqlx::query_as!(
         Recipe,
-        "
-        INSERT INTO recipes (title, description, instructions, preptime, difficulty, isoriginal)
+        r#"INSERT INTO recipes (title, description, instructions, preptime, difficulty, isoriginal)
         VALUES ($1, $2, $3, $4, $5, $6)
         RETURNING *
-        ",
+        "#,
         new_recipe.title,
         new_recipe.description,
         new_recipe.instructions,
@@ -150,10 +138,8 @@ async fn create_modified_recipe(
     // create preference mapping
     println!("preferences: {:?}", preferences);
     sqlx::query!(
-            "
-            INSERT INTO recipe_preferences (recipe_fk, preference_fk)
-            SELECT $1, id FROM preferences WHERE name = ANY($2)
-            ",
+            r#"INSERT INTO recipe_preferences (recipe_fk, preference_fk)
+            SELECT $1, id FROM preferences WHERE name = ANY($2)"#,
             new_recipe.id,
             preferences
         )
@@ -164,10 +150,8 @@ async fn create_modified_recipe(
     if recipe.isoriginal {
         // if recipe is original, original_fk = recipe.id
         sqlx::query!(
-            "
-            INSERT INTO variations (original_fk, variation_fk)
-            VALUES ($1, $2)
-            ",
+            r#"INSERT INTO variations (original_fk, variation_fk)
+            VALUES ($1, $2)"#,
             recipe.id,
             new_recipe.id
         )
@@ -176,10 +160,8 @@ async fn create_modified_recipe(
     } else {
         // if recipe is not original, original_fk = original_fk in mapping of recipe
         sqlx::query!(
-            "
-            INSERT INTO variations (original_fk, variation_fk)
-            SELECT original_fk, $2 FROM variations WHERE variation_fk = $1
-            ",
+            r#"INSERT INTO variations (original_fk, variation_fk)
+            SELECT original_fk, $2 FROM variations WHERE variation_fk = $1"#,
             recipe.id,
             new_recipe.id
         )

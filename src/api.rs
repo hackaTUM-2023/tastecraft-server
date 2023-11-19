@@ -6,11 +6,11 @@ use axum::{Json};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse};
 use axum::{Router, extract::State};
-use axum_extra::extract::Query;
-use axum::routing::{get, post};
-use serde::Deserialize;
+use axum::routing::get;
 use sqlx::{Postgres, Pool, PgPool};
 use tower_http::services::ServeDir;
+use serde::Deserialize;
+use axum::extract::Query;
 
 use crate::config::Config;
 use crate::services;

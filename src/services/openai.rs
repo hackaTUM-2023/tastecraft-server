@@ -1,4 +1,4 @@
-use clap::{Error, Parser};
+use clap::{Parser};
 use reqwest::{Client, Url};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -63,7 +63,7 @@ pub async fn send_request(recipe: &Recipe, preferences: &[String]) -> Result<Rec
     });
 
     let client = Client::new();
-    let mut req = client.post(url);
+    let req = client.post(url);
     let req = req.header("Content-Type", "application/json")
         .header("Authorization", format!("Bearer {}", _config.openai_key))
         .body(request.to_string());
